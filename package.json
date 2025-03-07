@@ -1,10 +1,14 @@
 {
 	"name": "epub-converter",
 	"version": "1.0.0",
-	"description": "EPUB to PDF conversion server",
+	"description": "Cross-platform EPUB to PDF conversion server using Calibre",
 	"main": "server.ts",
 	"scripts": {
-		"start": "tsx server.ts"
+		"start": "tsx server.ts",
+		"dev": "nodemon -e html,ts --exec 'tsx' server.ts"
+	},
+	"engines": {
+		"node": ">=14.0.0"
 	},
 	"dependencies": {
 		"@types/express": "^4.17.17",
@@ -15,5 +19,8 @@
 		"tsx": "^4.19.2",
 		"typescript": "^5.0.0"
 	},
-	"packageManager": "pnpm@10.4.1"
+	"packageManager": "pnpm@10.6.1+sha512.40ee09af407fa9fbb5fbfb8e1cb40fbb74c0af0c3e10e9224d7b53c7658528615b2c92450e74cfad91e3a2dcafe3ce4050d80bda71d757756d2ce2b66213e9a3",
+	"devDependencies": {
+		"nodemon": "^3.1.9"
+	}
 }

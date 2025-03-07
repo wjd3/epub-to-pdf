@@ -3,6 +3,7 @@ import multer from 'multer'
 import { exec } from 'child_process'
 import path from 'path'
 import fs from 'fs'
+import os from 'os'
 
 const app = express()
 const port = 3000
@@ -29,6 +30,32 @@ const storage = multer.diskStorage({
 
 const upload = multer({ storage: storage })
 
+// Get platform-specific command to check for ebook-convert
+const getEbookConvertCheckCommand = () => {
+	const platform = os.platform()
+	switch (platform) {
+		case 'win32':
+			return 'where ebook-convert'
+		default: // darwin, linux, etc.
+			return 'which ebook-convert'
+	}
+}
+
+// Get platform-specific command to convert epub to pdf
+const getConversionCommand = (inputPath: string, outputPath: string) => {
+	const escapedInputPath = inputPath.replace(/"/g, '\\"')
+	const escapedOutputPath = outputPath.replace(/"/g, '\\"')
+
+	const platform = os.platform()
+	if (platform === 'win32') {
+		// Windows
+		return `ebook-convert "${escapedInputPath}" "${escapedOutputPath}" --verbose`
+	} else {
+		// macOS, Linux
+		return `ebook-convert "${escapedInputPath}" "${escapedOutputPath}" --verbose`
+	}
+}
+
 app.post('/convert', upload.single('epubFile'), (req: Request, res: Response) => {
 	if (!req.file) {
 		return res.status(400).json({ error: 'No file uploaded.' })
@@ -37,62 +64,73 @@ app.post('/convert', upload.single('epubFile'), (req: Request, res: Response) =>
 	const filePath = req.file.path
 	const fileName = req.file.filename
 	const baseName = path.basename(fileName, path.extname(fileName))
-	const bashScriptPath = path.join(__dirname, 'convert.sh')
+	const outputPath = path.join(UPLOAD_FOLDER, `${baseName}.pdf`)
 
-	const command = `bash "${bashScriptPath}" "${filePath}"`
-
-	exec(command, (error, stdout, stderr) => {
-		if (error) {
-			console.error(`Conversion error: ${error.message}`)
-			console.error(`Standard error output: ${stderr}`)
-			console.error(`Standard output: ${stdout}`)
-
-			// Clean up the input file
+	// First check if ebook-convert is available
+	exec(getEbookConvertCheckCommand(), (checkError) => {
+		if (checkError) {
+			console.error(`Calibre check error: ${checkError.message}`)
 			try {
 				fs.unlinkSync(filePath)
 			} catch (e) {
 				console.error('Error cleaning up input file:', e)
 			}
-
-			// Check if the error message indicates Calibre is not installed
-			if (stderr.includes('ebook-convert not found')) {
-				return res
-					.status(500)
-					.json({ error: 'Calibre is not installed. Please install Calibre first.' })
-			}
-
-			return res.status(500).json({ error: `Conversion failed: ${stderr || error.message}` })
+			return res
+				.status(500)
+				.json({ error: 'Calibre is not installed or not in PATH. Please install Calibre first.' })
 		}
 
-		const pdfPath = path.join(UPLOAD_FOLDER, `${baseName}.pdf`)
+		// If ebook-convert is available, proceed with conversion
+		const command = getConversionCommand(filePath, outputPath)
 
-		// Verify the PDF exists and is not empty
-		try {
-			const stats = fs.statSync(pdfPath)
-			if (stats.size === 0) {
-				fs.unlinkSync(pdfPath)
-				fs.unlinkSync(filePath)
-				return res.status(500).json({ error: 'Conversion failed: Generated PDF is empty' })
+		exec(command, (error, stdout, stderr) => {
+			if (error) {
+				console.error(`Conversion error: ${error.message}`)
+				console.error(`Standard error output: ${stderr}`)
+				console.error(`Standard output: ${stdout}`)
+
+				// Clean up the input file
+				try {
+					fs.unlinkSync(filePath)
+				} catch (e) {
+					console.error('Error cleaning up input file:', e)
+				}
+
+				return res.status(500).json({ error: `Conversion failed: ${stderr || error.message}` })
 			}
-		} catch (err) {
-			console.error('Error checking PDF:', err)
+
+			// Verify the PDF exists and is not empty
 			try {
-				fs.unlinkSync(filePath)
-			} catch (e) {
-				console.error('Error cleaning up input file:', e)
+				const stats = fs.statSync(outputPath)
+				if (stats.size === 0) {
+					fs.unlinkSync(outputPath)
+					fs.unlinkSync(filePath)
+					return res.status(500).json({ error: 'Conversion failed: Generated PDF is empty' })
+				}
+			} catch (err) {
+				console.error('Error checking PDF:', err)
+				try {
+					fs.unlinkSync(filePath)
+				} catch (e) {
+					console.error('Error cleaning up input file:', e)
+				}
+				return res.status(500).json({ error: 'Conversion failed: PDF was not generated' })
 			}
-			return res.status(500).json({ error: 'Conversion failed: PDF was not generated' })
-		}
 
-		res.download(pdfPath, `${baseName}.pdf`, (err) => {
-			if (err) {
-				console.error('Download error:', err)
-				res.status(500).json({ error: 'Error downloading file.' })
-			} else {
-				// Optional: Clean up the files after download
-				fs.unlinkSync(filePath)
-				fs.unlinkSync(pdfPath)
-			}
+			res.download(outputPath, `${baseName}.pdf`, (err) => {
+				if (err) {
+					console.error('Download error:', err)
+					res.status(500).json({ error: 'Error downloading file.' })
+				} else {
+					// Clean up files after download
+					try {
+						fs.unlinkSync(filePath)
+						fs.unlinkSync(outputPath)
+					} catch (e) {
+						console.error('Error cleaning up files:', e)
+					}
+				}
+			})
 		})
 	})
 })
