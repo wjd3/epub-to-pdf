@@ -21,62 +21,203 @@
 
 			form {
 				background-color: #fff; /* White form background */
-				padding: 20px;
+				padding: 30px;
 				border-radius: 8px; /* Rounded corners */
 				box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1); /* Subtle shadow */
 				display: flex;
 				flex-direction: column; /* Align form elements vertically */
 				align-items: stretch; /* Stretch form elements to container width */
+				width: 400px; /* Set a fixed width */
 			}
 
-			input[type='file'] {
+			.file-drop-area {
+				position: relative;
+				display: flex;
+				flex-direction: column;
+				align-items: center;
+				justify-content: center;
+				padding: 40px 20px;
+				border: 2px dashed #ccc;
+				border-radius: 8px;
+				text-align: center;
+				margin-bottom: 20px;
+				transition: all 0.3s ease;
+				background-color: #f8f9fa;
+				cursor: pointer;
+			}
+
+			.file-drop-area.dragover {
+				background-color: #e9ecef;
+				border-color: #007bff;
+			}
+
+			.file-drop-label {
+				font-size: 18px;
+				color: #666;
 				margin-bottom: 10px;
-				padding: 8px;
-				border: 1px solid #ccc;
-				border-radius: 4px;
+			}
+
+			.file-icon {
+				font-size: 40px;
+				margin-bottom: 10px;
+				color: #999;
+			}
+
+			.file-info {
+				margin-top: 10px;
+				font-size: 14px;
+				color: #777;
+			}
+
+			.hidden-input {
+				position: absolute;
+				width: 100%;
+				height: 100%;
+				top: 0;
+				left: 0;
+				opacity: 0;
+				cursor: pointer;
 			}
 
 			button {
 				background-color: #007bff; /* Blue button */
 				color: #fff;
-				padding: 10px 15px;
+				padding: 12px 15px;
 				border: none;
 				border-radius: 4px;
 				cursor: pointer;
+				font-size: 16px;
+				transition: background-color 0.2s;
 			}
 
 			button:hover {
 				background-color: #0056b3; /* Darker blue on hover */
 			}
 
+			button:disabled {
+				background-color: #cccccc;
+				cursor: not-allowed;
+			}
+
 			#result {
 				margin-top: 20px;
 				font-weight: bold;
+				text-align: center;
 			}
 		</style>
 	</head>
 	<body>
 		<h1>EPUB to PDF Converter</h1>
 		<form id="uploadForm" enctype="multipart/form-data">
-			<input type="file" name="epubFile" id="epubFile" accept=".epub" />
-			<button type="submit">Convert</button>
+			<div id="dropArea" class="file-drop-area">
+				<div class="file-icon">📚</div>
+				<div class="file-drop-label">Drag & drop your EPUB file here</div>
+				<div class="file-drop-label">or</div>
+				<div class="file-drop-label">click to browse</div>
+				<input type="file" name="epubFile" id="epubFile" accept=".epub" class="hidden-input" />
+				<div id="fileInfo" class="file-info"></div>
+			</div>
+			<button type="submit" id="convertButton" disabled>Convert</button>
 		</form>
 		<div id="result"></div>
 
 		<script>
 			const form = document.getElementById('uploadForm')
+			const dropArea = document.getElementById('dropArea')
+			const fileInput = document.getElementById('epubFile')
+			const fileInfo = document.getElementById('fileInfo')
+			const convertButton = document.getElementById('convertButton')
 			const resultDiv = document.getElementById('result')
 
+			// Function to update the UI when a file is selected
+			const handleFileSelected = (file) => {
+				if (file && file.name.toLowerCase().endsWith('.epub')) {
+					fileInfo.textContent = `Selected: ${file.name} (${formatFileSize(file.size)})`
+					convertButton.disabled = false
+				} else {
+					fileInfo.textContent = file ? 'Please select an EPUB file.' : ''
+					convertButton.disabled = true
+				}
+			}
+
+			// Format file size in a human-readable format
+			const formatFileSize = (bytes) => {
+				if (bytes === 0) return '0 Bytes'
+				const k = 1024
+				const sizes = ['Bytes', 'KB', 'MB', 'GB']
+				const i = Math.floor(Math.log(bytes) / Math.log(k))
+				return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
+			}
+
+			// Setup drag and drop events
+			;['dragenter', 'dragover', 'dragleave', 'drop'].forEach((eventName) => {
+				dropArea.addEventListener(
+					eventName,
+					(e) => {
+						e.preventDefault()
+						e.stopPropagation()
+					},
+					false
+				)
+			})
+
+			// Add visual indicators for drag events
+			dropArea.addEventListener(
+				'dragenter',
+				() => {
+					dropArea.classList.add('dragover')
+				},
+				false
+			)
+
+			dropArea.addEventListener(
+				'dragover',
+				() => {
+					dropArea.classList.add('dragover')
+				},
+				false
+			)
+
+			dropArea.addEventListener(
+				'dragleave',
+				() => {
+					dropArea.classList.remove('dragover')
+				},
+				false
+			)
+
+			dropArea.addEventListener(
+				'drop',
+				(e) => {
+					dropArea.classList.remove('dragover')
+					const file = e.dataTransfer.files[0]
+					if (file) {
+						fileInput.files = e.dataTransfer.files
+						handleFileSelected(file)
+					}
+				},
+				false
+			)
+
+			// Handle file input change
+			fileInput.addEventListener('change', () => {
+				const file = fileInput.files[0]
+				handleFileSelected(file)
+			})
+
+			// Handle form submission
 			form.addEventListener('submit', (event) => {
 				event.preventDefault()
 
-				const file = document.getElementById('epubFile').files[0]
+				const file = fileInput.files[0]
 				if (!file) {
 					resultDiv.textContent = 'Please select an EPUB file.'
 					return
 				}
 
 				resultDiv.textContent = 'Converting...'
+				convertButton.disabled = true
+
 				const formData = new FormData()
 				formData.append('epubFile', file)
 
@@ -102,10 +243,15 @@
 						window.URL.revokeObjectURL(url)
 						document.body.removeChild(a)
 						resultDiv.textContent = 'Conversion complete! Downloading PDF...'
+						// Reset form for next conversion
+						fileInfo.textContent = ''
+						fileInput.value = ''
+						convertButton.disabled = true
 					})
 					.catch((error) => {
 						resultDiv.textContent = `Error: ${error.message}`
 						console.error(error)
+						convertButton.disabled = false
 					})
 			})
 		</script>
